@@ -1,0 +1,111 @@
+@startuml
+!theme plain
+hide empty members
+skinparam linetype ortho
+
+' Stereotypes
+class BookingController <<Controller>> {
+    - bookingService: IBookingService
+    + makeReservation(booking: Booking): void
+    + cancelReservation(bookingId: String): void
+    + getBookingDetails(bookingId: String): Booking
+}
+
+interface IBookingService <<Interface>> {
+    + checkAvailability(rooms: List<Room>, in: Date, out: Date): boolean
+    + calculateTotal(booking: Booking): double
+    + applyDiscount(booking: Booking): void
+}
+
+class BookingService <<Service>> {
+    - bookingRepository: IBookingRepository
+    + checkAvailability(rooms: List<Room>, in: Date, out: Date): boolean
+    + calculateTotal(booking: Booking): double
+    + applyDiscount(booking: Booking): void
+}
+
+interface IBookingRepository <<Interface>> {
+    + save(booking: Booking): void
+    + delete(id: String): void
+    + findById(id: String): Booking
+    + findAll(): List<Booking>
+}
+
+class Hotel <<Entity>> {
+    - id: String
+    - name: String
+    - address: String
+    + addRoom(room: Room): void
+    + removeRoom(room: Room): void
+    + getRooms(): List<Room>
+}
+
+class Room <<Entity>> {
+    - id: String
+    - number: String
+    - price: double
+    + isAvailable(date: Date): boolean
+    + getPrice(): double
+    + getType(): RoomType
+}
+
+class RoomType <<Entity>> {
+    - name: String
+    - description: String
+    - basePrice: double
+    + getName(): String
+    + getBasePrice(): double
+}
+
+class Guest <<Entity>> {
+    - id: String
+    - name: String
+    - email: String
+    + updateInfo(name: String, email: String): void
+    + getHistory(): List<Booking>
+}
+
+class Booking <<Entity>> {
+    - id: String
+    - checkInDate: Date
+    - checkOutDate: Date
+    - totalAmount: double
+    + addRoom(room: Room): void
+    + removeRoom(room: Room): void
+    + getInvoice(): Invoice
+}
+
+' Relationships
+
+' Controller uses Service (Dependency/Association via Interface)
+BookingController ..> IBookingService : uses
+BookingController --> IBookingService : depends on
+
+' Service implements Interface (Realization)
+IBookingService <|.. BookingService
+
+' Service uses Repository (Association)
+BookingService --> IBookingRepository
+
+' Entities Relationships
+
+' Hotel Composite Room (Composition)
+Hotel "1" *-- "0..*" Room : contains >
+
+' Room Aggregates RoomType (Aggregation - RoomType exists independently)
+Room "0..*" o-- "1" RoomType : has >
+
+' Booking Associated with Guest (Association)
+Guest "1" --> "0..*" Booking : makes >
+
+' Booking Aggregates Room (Aggregation/Association - Booking has rooms, many-to-many logically but modeled as list here)
+Booking "0..*" o-- "1..*" Room : includes >
+
+' Service depends on Entities (Dependency)
+IBookingService ..> Booking
+IBookingService ..> Room
+
+' Repository depends on Entities
+IBookingRepository ..> Booking
+
+@enduml
