@@ -1,68 +1,110 @@
 @startuml
 !theme plain
-hide empty members
 skinparam linetype ortho
 
-' Stereotypes
+' ====== CONTROLLER LAYER ======
 class BookingController <<Controller>> {
     - bookingService: IBookingService
-    + makeReservation(booking: Booking): void
-    + cancelReservation(bookingId: String): void
+    - logger: Logger
+    - validator: RequestValidator
+    + makeReservation(guestId: String, roomIds: List<String>, checkIn: Date, checkOut: Date): Booking
+    + cancelReservation(bookingId: String): boolean
     + getBookingDetails(bookingId: String): Booking
+    + getAllBookings(): List<Booking>
 }
 
+' ====== SERVICE LAYER ======
 interface IBookingService <<Interface>> {
-    + checkAvailability(rooms: List<Room>, in: Date, out: Date): boolean
+    + checkAvailability(rooms: List<Room>, checkIn: Date, checkOut: Date): boolean
     + calculateTotal(booking: Booking): double
-    + applyDiscount(booking: Booking): void
+    + applyDiscount(booking: Booking, discountCode: String): void
+    + processPayment(booking: Booking, paymentMethod: String): Payment
 }
 
 class BookingService <<Service>> {
     - bookingRepository: IBookingRepository
-    + checkAvailability(rooms: List<Room>, in: Date, out: Date): boolean
+    - roomRepository: IRoomRepository
+    - discountCalculator: DiscountCalculator
+    + checkAvailability(rooms: List<Room>, checkIn: Date, checkOut: Date): boolean
     + calculateTotal(booking: Booking): double
-    + applyDiscount(booking: Booking): void
+    + applyDiscount(booking: Booking, discountCode: String): void
+    + processPayment(booking: Booking, paymentMethod: String): Payment
+    + createBooking(guest: Guest, rooms: List<Room>, checkIn: Date, checkOut: Date): Booking
 }
 
+' ====== REPOSITORY LAYER ======
 interface IBookingRepository <<Interface>> {
     + save(booking: Booking): void
     + delete(id: String): void
     + findById(id: String): Booking
     + findAll(): List<Booking>
+    + findByGuestId(guestId: String): List<Booking>
 }
 
+class BookingRepository <<Repository>> {
+    - database: DatabaseConnection
+    - queryBuilder: QueryBuilder
+    - cache: CacheManager
+    + save(booking: Booking): void
+    + delete(id: String): void
+    + findById(id: String): Booking
+    + findAll(): List<Booking>
+    + findByGuestId(guestId: String): List<Booking>
+}
+
+interface IRoomRepository <<Interface>> {
+    + save(room: Room): void
+    + findById(id: String): Room
+    + findAvailableRooms(checkIn: Date, checkOut: Date): List<Room>
+}
+
+' ====== ENTITY LAYER ======
 class Hotel <<Entity>> {
     - id: String
     - name: String
     - address: String
+    - phone: String
+    - rating: int
     + addRoom(room: Room): void
     + removeRoom(room: Room): void
     + getRooms(): List<Room>
+    + updateInfo(name: String, address: String, phone: String): void
 }
 
 class Room <<Entity>> {
     - id: String
-    - number: String
+    - roomNumber: String
+    - floor: int
     - price: double
-    + isAvailable(date: Date): boolean
+    - status: String
+    + isAvailable(checkIn: Date, checkOut: Date): boolean
     + getPrice(): double
-    + getType(): RoomType
+    + getRoomType(): RoomType
+    + updateStatus(status: String): void
 }
 
 class RoomType <<Entity>> {
+    - id: String
     - name: String
     - description: String
     - basePrice: double
+    - capacity: int
     + getName(): String
     + getBasePrice(): double
+    + getCapacity(): int
+    + updatePrice(newPrice: double): void
 }
 
 class Guest <<Entity>> {
     - id: String
-    - name: String
+    - firstName: String
+    - lastName: String
     - email: String
-    + updateInfo(name: String, email: String): void
-    + getHistory(): List<Booking>
+    - phone: String
+    + updateInfo(firstName: String, lastName: String, email: String, phone: String): void
+    + getBookingHistory(): List<Booking>
+    + getFullName(): String
+    + validateContact(): boolean
 }
 
 class Booking <<Entity>> {
@@ -70,42 +112,82 @@ class Booking <<Entity>> {
     - checkInDate: Date
     - checkOutDate: Date
     - totalAmount: double
+    - status: String
+    - discountApplied: double
     + addRoom(room: Room): void
     + removeRoom(room: Room): void
+    + calculateDuration(): int
     + getInvoice(): Invoice
+    + updateStatus(status: String): void
 }
 
-' Relationships
+class Invoice <<Entity>> {
+    - id: String
+    - invoiceNumber: String
+    - issueDate: Date
+    - totalAmount: double
+    - taxAmount: double
+    - status: String
+    + generateInvoiceNumber(): String
+    + calculateTax(): double
+    + printInvoice(): void
+    + markAsPaid(): void
+}
 
-' Controller uses Service (Dependency/Association via Interface)
+class Payment <<Entity>> {
+    - id: String
+    - paymentMethod: String
+    - amount: double
+    - transactionId: String
+    - paymentDate: Date
+    - status: String
+    + processTransaction(): boolean
+    + refund(): boolean
+    + getReceipt(): String
+    + validatePayment(): boolean
+}
+
+' ====== RELATIONSHIPS ======
+
+' Controller Layer Dependencies
 BookingController ..> IBookingService : uses
-BookingController --> IBookingService : depends on
 
-' Service implements Interface (Realization)
-IBookingService <|.. BookingService
+' Service Layer - Realization
+IBookingService <|.. BookingService : <<implements>>
 
-' Service uses Repository (Association)
-BookingService --> IBookingRepository
+' Repository Layer - Realization
+IBookingRepository <|.. BookingRepository : <<implements>>
 
-' Entities Relationships
+' Service Layer Dependencies
+BookingService --> IBookingRepository : uses
+BookingService ..> IRoomRepository : uses
+BookingService ..> Booking : depends
+BookingService ..> Room : depends
+BookingService ..> Guest : depends
+BookingService ..> Payment : creates
 
-' Hotel Composite Room (Composition)
-Hotel "1" *-- "0..*" Room : contains >
+' Repository Dependencies
+IBookingRepository ..> Booking : manages
+IRoomRepository ..> Room : manages
 
-' Room Aggregates RoomType (Aggregation - RoomType exists independently)
-Room "0..*" o-- "1" RoomType : has >
+' Entity Relationships - Composition & Aggregation & Association
 
-' Booking Associated with Guest (Association)
+' Hotel *-- Room (Composition: Room cannot exist without Hotel)
+Hotel "1" *-- "0..*" Room : owns >
+
+' Room o-- RoomType (Aggregation: RoomType can exist independently)
+Room "0..*" o-- "1" RoomType : categorized by >
+
+' Guest --> Booking (Association: Guest makes bookings)
 Guest "1" --> "0..*" Booking : makes >
 
-' Booking Aggregates Room (Aggregation/Association - Booking has rooms, many-to-many logically but modeled as list here)
-Booking "0..*" o-- "1..*" Room : includes >
+' Booking o-- Room (Aggregation: rooms can exist without specific booking)
+Booking "0..*" o-- "1..*" Room : reserves >
 
-' Service depends on Entities (Dependency)
-IBookingService ..> Booking
-IBookingService ..> Room
+' Booking --> Invoice (Aggregation: Invoice must be kept even if Booking deleted)
+Booking "1" o-- "0..1" Invoice : generates >
 
-' Repository depends on Entities
-IBookingRepository ..> Booking
+' Booking *-- Payment (Composition: Payment has no value if booking is deleted)
+Booking "1" *-- "0..*" Payment : processes >
 
 @enduml
